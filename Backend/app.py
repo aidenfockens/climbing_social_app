@@ -43,7 +43,7 @@ def home():
 
 
 AWS_ACCESS_KEY = os.getenv('AWS_ACCESS_KEY')
-AWS_SECRET_KEY = '1dWGyoNkoRSnaETTEH3eUE1ugwcIAhSAa8am/Me2'
+AWS_SECRET_KEY = os.getenv('AWS_SECRET_KEY')
 BUCKET_NAME = 'userpictures-aidenfockens'
 REGION_NAME = 'us-east-2'
 
