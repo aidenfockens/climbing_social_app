@@ -42,7 +42,7 @@ def home():
     return "Flask is running!", 200
 
 
-AWS_ACCESS_KEY = 'AKIATHVQLI26RM6QYFD4'
+AWS_ACCESS_KEY = os.getenv('AWS_ACCESS_KEY')
 AWS_SECRET_KEY = '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'
 BUCKET_NAME = 'userpictures-aidenfockens'
 REGION_NAME = 'us-east-2'
