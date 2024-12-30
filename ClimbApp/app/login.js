@@ -31,14 +31,13 @@ export default function AuthScreen() {
 
       if (response.ok) {
         Alert.alert('Success', data.message);
-        const userDetailsResponse = await fetch(`http://127.0.0.1:5001/userdetails/${username}`, {
+        const userDetailsResponse = await fetch(`http://127.0.0.1:5001/getUserDetails`, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
           },
           credentials: 'include',
         });
-
         const userDetailsData = await userDetailsResponse.json();
 
         if (userDetailsResponse.ok) {

@@ -4,6 +4,8 @@ import CalendarScreen from './CalendarScreen';
 import MessagesScreen from './MessagesScreen';
 import PublicPostsScreen from './PublicPostsScreen';
 import PotentialFriendsScreen from './PotentialFriendsScreen';
+import ConversationScreen from './ConversationScreen'
+import NewConversationScreen from './NewConversationScreen'
 import { View, Text, Image, Button, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 
@@ -14,44 +16,28 @@ export default function Tabs() {
   const [username, setUsername] = useState(null);
   const [userDetails, setUserDetails] = useState(null);
   const router = useRouter();
-  // Fetch user details
-  const fetchUserDetails = async (username) => {
-    try {
-      const response = await fetch(`http://localhost:5001/userdetails/${username}`);
-      if (response.ok) {
-        const data = await response.json();
-        setUserDetails(data);
-      } else {
-        console.error('Failed to fetch user details');
-      }
-    } catch (error) {
-      console.error('Error fetching user details:', error);
-    }
-  };
-
-  // Fetch username and then user details
+  
   useEffect(() => {
-    const fetchUsername = async () => {
+    const fetchUserDetails = async (username) => {
       try {
-        const response = await fetch('http://127.0.0.1:5001/user', {
-          method: 'GET',
-          credentials: 'include', // Ensures cookies are included in the request
+        const response = await fetch(`http://127.0.0.1:5001/getUserDetails`,{
+          credentials: 'include'
         });
-
         if (response.ok) {
           const data = await response.json();
-          setUsername(data.username);
-          fetchUserDetails(data.username);
+          setUserDetails(data);
         } else {
-          console.error('Failed to fetch username');
+          console.error('Failed to fetch user details');
         }
       } catch (error) {
-        console.error('Error fetching username:', error);
+        console.error('Error fetching user details:', error);
       }
     };
 
-    fetchUsername();
-  }, []);
+    fetchUserDetails()
+  }, [username])
+  
+
 
   const handleLogout = async () => {
     
@@ -104,6 +90,9 @@ export default function Tabs() {
       <Tab.Screen name="Messages" component={MessagesScreen} options={{ tabBarLabel: 'Messages',headerTitle: '' }} />
       <Tab.Screen name="Public Posts" component={PublicPostsScreen} options={{ tabBarLabel: 'Public Posts',headerTitle: '' }} />
       <Tab.Screen name="Potential Friends" component={PotentialFriendsScreen} options={{ tabBarLabel: 'Potential Friends',headerTitle: '' }} />
+      <Tab.Screen name="NewConversation" component={NewConversationScreen} options={{ tabBarButton: () => null }}/>
+      <Tab.Screen name="Conversation" component={ConversationScreen} options={{ tabBarButton: () => null }} />
+      
     </Tab.Navigator>
   );
 }

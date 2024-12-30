@@ -1,27 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Modal, TextInput, Button, Image } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { useNavigation } from '@react-navigation/native';
+import { useRoute } from '@react-navigation/native';
 
-export default function PublicPostsScreen() {
-  const [locations, setLocations] = useState([]);
+export default function LocationPostsScreen() {
+  const [posts, setPosts] = useState([]);
   const [modalVisible, setModalVisible] = useState(false);
-  const [name, setName] = useState('');
-  const [state, setState] = useState('');
+  const [content, setContent] = useState('');
   const [image, setImage] = useState(null);
-  const navigation = useNavigation();
+  const route = useRoute();
+  const { locationId } = route.params;
 
   useEffect(() => {
-    fetchLocations();
+    fetchPosts();
   }, []);
 
-  const fetchLocations = async () => {
+  const fetchPosts = async () => {
     try {
-      const response = await fetch('http://127.0.0.1:5001/get_locations');
+      const response = await fetch(`http://127.0.0.1:5001/get_posts/${locationId}`);
       const data = await response.json();
-      setLocations(data);
+      setPosts(data);
     } catch (error) {
-      console.error('Error fetching locations:', error);
+      console.error('Error fetching posts:', error);
     }
   };
 
@@ -37,10 +37,10 @@ export default function PublicPostsScreen() {
     }
   };
 
-  const handleAddLocation = async () => {
+  const handleAddPost = async () => {
     const formData = new FormData();
-    formData.append('name', name);
-    formData.append('state', state);
+    formData.append('location_id', locationId);
+    formData.append('content', content);
 
     const base64Image = image.split(',')[1];
     const byteCharacters = atob(base64Image);
@@ -48,10 +48,10 @@ export default function PublicPostsScreen() {
     const byteArray = new Uint8Array(byteNumbers);
     const blob = new Blob([byteArray], { type: 'image/jpeg' });
 
-    formData.append('file', blob, `${name}.jpg`);
+    formData.append('file', blob, `${locationId}.jpg`);
 
     try {
-      const response = await fetch('http://127.0.0.1:5001/add_location', {
+      const response = await fetch('http://127.0.0.1:5001/add_post', {
         method: 'POST',
         body: formData,
         credentials: 'include',
@@ -61,48 +61,41 @@ export default function PublicPostsScreen() {
 
       if (response.ok) {
         setModalVisible(false);
-        fetchLocations();
+        fetchPosts();
       } else {
-        console.error('Error adding location:', data.error);
+        console.error('Error adding post:', data.error);
       }
     } catch (error) {
-      console.error('Error adding location:', error);
+      console.error('Error adding post:', error);
     }
   };
 
   return (
     <View style={styles.container}>
       <FlatList
-        data={locations}
+        data={posts}
         keyExtractor={(item) => item.id.toString()}
         renderItem={({ item }) => (
-          <TouchableOpacity onPress={() => navigation.navigate('LocationPosts', { locationId: item.id })}>
-            <View style={styles.location}>
-              <Image source={{ uri: item.picture_url }} style={styles.locationImage} />
-              <Text style={styles.locationName}>{item.name}</Text>
-              <Text style={styles.locationState}>{item.state}</Text>
-            </View>
-          </TouchableOpacity>
+          <View style={styles.post}>
+            <Text style={styles.username}>{item.username}</Text>
+            <Text style={styles.timestamp}>{new Date(item.timestamp).toLocaleString()}</Text>
+            <Text style={styles.content}>{item.content}</Text>
+            {item.picture_url && <Image source={{ uri: item.picture_url }} style={styles.postImage} />}
+          </View>
         )}
       />
-      <Button title="Add Location" onPress={() => setModalVisible(true)} />
+      <Button title="Add Post" onPress={() => setModalVisible(true)} />
       <Modal visible={modalVisible} animationType="slide">
         <View style={styles.modalContainer}>
           <TextInput
             style={styles.input}
-            placeholder="Location Name"
-            value={name}
-            onChangeText={setName}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="State"
-            value={state}
-            onChangeText={setState}
+            placeholder="Post Content"
+            value={content}
+            onChangeText={setContent}
           />
           <Button title="Pick Image" onPress={pickImage} />
           {image && <Image source={{ uri: image }} style={styles.imagePreview} />}
-          <Button title="Add Location" onPress={handleAddLocation} />
+          <Button title="Add Post" onPress={handleAddPost} />
           <Button title="Cancel" onPress={() => setModalVisible(false)} />
         </View>
       </Modal>
@@ -115,20 +108,24 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 10,
   },
-  location: {
+  post: {
     marginBottom: 20,
   },
-  locationImage: {
-    width: '100%',
-    height: 200,
-  },
-  locationName: {
+  username: {
     fontSize: 18,
     fontWeight: 'bold',
   },
-  locationState: {
-    fontSize: 16,
+  timestamp: {
+    fontSize: 14,
     color: '#666',
+  },
+  content: {
+    fontSize: 16,
+    marginVertical: 10,
+  },
+  postImage: {
+    width: '100%',
+    height: 200,
   },
   modalContainer: {
     flex: 1,

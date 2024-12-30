@@ -166,8 +166,9 @@ class UserDetails(db.Model):
     picture_url = db.Column(db.String(255), nullable=True)
     
 
-@app.route('/userdetails/<username>', methods=['GET'])
-def check_user_details(username):
+@app.route('/getUserDetails', methods=['GET'])
+def check_user_details():
+    username = session.get('username')
     user_details = UserDetails.query.filter_by(username=username).first()
     if user_details:
         return jsonify({
@@ -189,18 +190,11 @@ def check_user_details(username):
 
 
 
-@app.route('/userdetails', methods=['POST'])
+@app.route('/addUserDetails', methods=['POST'])
 def save_user_details():
-    # Check if user is logged in
     username = session.get('username')
-    print("Request headers:", request.headers)
-    print("Request form data:", request.form)
-    print("Request files:", request.files.get("file"))
-
-
     if not username:
         return jsonify({'error': 'User not logged in'}), 401
-
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
 
@@ -216,19 +210,14 @@ def save_user_details():
     leading_level = data.get('leading_level')
     tradClimbinglevel = data.get('tradClimbinglevel')
 
-
-
     if not all([name, age, location, years_climbing, quickdraws, tradGear,top_roping_level,leading_level,tradClimbinglevel]):
         return jsonify({'error': 'All required fields must be provided'}), 400
 
-    # Upload the file to S3
     upload_result = upload_image(username, request.files.get("file"))
-    if not upload_result[0]:  # Check if upload failed
+    if not upload_result[0]:  
         return jsonify({'error': 'Failed to upload image'}), 500
 
     file_url = upload_result[1]
-
-    # Save user details and file URL to the database
     user_details = UserDetails(
         username=username,
         name=name,
@@ -245,7 +234,6 @@ def save_user_details():
     )
     db.session.add(user_details)
     db.session.commit()
-
     return jsonify({'message': 'User details and image saved successfully', 'url': file_url}), 201
 
 
@@ -287,19 +275,20 @@ class UserEvents(db.Model):
 
 
 
-@app.route('/events', methods=['POST'])
+@app.route('/addEvents', methods=['POST'])
 def add_event():
     username = session.get('username')
+
     if not username:
         return jsonify({'error': 'User not logged in'}), 401
 
     data = request.get_json()
-    date = data.get('date')
-    time = data.get('time')
+    date = datetime.strptime(data.get('date'), '%Y-%m-%d').date()
+    time = datetime.strptime(data.get('time'), '%I:%M %p').time()
     location = data.get('location')
     description = data.get('description')
-    visibility = data.get('visibility')
-    allowed_users = data.get('allowed_users', [])  # List of usernames
+    visibility = data.get('privacy')
+    allowed_users = data.get('allowedUsers', [])  # List of usernames
 
     if not all([date, time, location, description, visibility]):
         return jsonify({'error': 'All fields are required'}), 400
@@ -307,21 +296,24 @@ def add_event():
     # Save event
     event = UserEvents(
         username=username,
-        date=datetime.strptime(date, '%Y-%m-%d').date(),
-        time=datetime.strptime(time, '%H:%M:%S').time(),
+        date=date,
+        time=time,
         location=location,
         description=description,
         visibility=visibility,
         allowed_users=json.dumps(allowed_users)
     )
+
     db.session.add(event)
     db.session.commit()
     return jsonify({'message': 'Event added successfully'}), 201
 
 
-@app.route('/events', methods=['GET'])
+@app.route('/getEvents', methods=['GET'])
 def get_events():
+    
     username = session.get('username')
+
     if not username:
         return jsonify({'error': 'User not logged in'}), 401
 
@@ -334,13 +326,13 @@ def get_events():
         'id': event.id,
         'username': event.username,
         'date': event.date.strftime('%Y-%m-%d'),
-        'time': event.time.strftime('%H:%M:%S'),
+        'time': event.time.strftime('%I:%M %p').lstrip('0').replace(':00 ', ' '),
         'location': event.location,
         'description': event.description,
         'visibility': event.visibility,
         'allowed_users': json.loads(event.allowed_users or '[]')
     } for event in events]
-
+    print(events_list)
     return jsonify(events_list), 200
 
 
@@ -355,11 +347,195 @@ def search_users():
     return jsonify(user_list), 200
 
 
+#Messages
+
+class Messages(db.Model):
+    __tablename__ = 'Messages'
+    id = db.Column(db.Integer, primary_key=True)
+    sender = db.Column(db.String(150), db.ForeignKey('ClimbUsers.username'), nullable=False)
+    recipient = db.Column(db.String(150), db.ForeignKey('ClimbUsers.username'), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.DateTime, default=db.func.current_timestamp(), nullable=False)
+
+@app.route('/get_conversations', methods=['GET'])
+def get_conversations():
+    username = session.get('username')
+    if not username:
+        return jsonify({'error': 'User not logged in'}), 401
+
+    # Subquery to get the latest message for each conversation
+    subquery = (
+        db.session.query(
+            db.func.least(Messages.sender, Messages.recipient).label('user1'),
+            db.func.greatest(Messages.sender, Messages.recipient).label('user2'),
+            db.func.max(Messages.timestamp).label('latest_timestamp')
+        )
+        .filter((Messages.sender == username) | (Messages.recipient == username))
+        .group_by('user1', 'user2')
+        .subquery()
+    )
+
+    # Join to fetch full details of the latest message
+    conversations = (
+        db.session.query(Messages)
+        .join(
+            subquery,
+            (db.func.least(Messages.sender, Messages.recipient) == subquery.c.user1) &
+            (db.func.greatest(Messages.sender, Messages.recipient) == subquery.c.user2) &
+            (Messages.timestamp == subquery.c.latest_timestamp)
+        )
+        .all()
+    )
+
+    # Format the response
+    response = [
+        {
+            'conversation_with': msg.recipient if msg.sender == username else msg.sender,
+            'last_message': msg.content,
+            'timestamp': msg.timestamp
+        }
+        for msg in conversations
+    ]
+
+    return jsonify(response), 200
 
 
 
+@app.route('/get_messages/<recipient>', methods=['GET'])
+def get_messages(recipient):
+    username = session.get('username')
+    if not username:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    messages = Messages.query.filter(
+        ((Messages.sender == username) & (Messages.recipient == recipient)) |
+        ((Messages.sender == recipient) & (Messages.recipient == username))
+    ).order_by(Messages.timestamp).all()
+
+    messages_list = [
+        {
+            'sender': 'me' if msg.sender == username else msg.sender,
+            'recipient': msg.recipient,
+            'content': msg.content,
+            'timestamp': msg.timestamp
+        }
+        for msg in messages
+    ]
+
+    return jsonify(messages_list), 200
 
 
+@app.route('/send_message', methods=['POST'])
+def send_message():
+    username = session.get('username')
+    if not username:
+        return jsonify({'error': 'User not logged in'}), 401
+
+    data = request.get_json()
+    recipient = data.get('recipient')
+    content = data.get('content')
+
+    if not recipient or not content:
+        return jsonify({'error': 'Recipient and content are required'}), 400
+
+    message = Messages(sender=username, recipient=recipient, content=content)
+    db.session.add(message)
+    db.session.commit()
+
+    return jsonify({'message': 'Message sent successfully'}), 201
+
+#Locations/Public posts
+
+class Locations(db.Model):
+    __tablename__ = 'Locations'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(150), nullable=False)
+    state = db.Column(db.String(150), nullable=False)
+    picture_url = db.Column(db.String(255), nullable=True)
+
+class Posts(db.Model):
+    __tablename__ = 'Posts'
+    id = db.Column(db.Integer, primary_key=True)
+    location_id = db.Column(db.Integer, db.ForeignKey('Locations.id'), nullable=False)
+    username = db.Column(db.String(150), db.ForeignKey('ClimbUsers.username'), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    picture_url = db.Column(db.String(255), nullable=True)
+    timestamp = db.Column(db.DateTime, default=db.func.current_timestamp(), nullable=False)
+
+@app.route('/add_location', methods=['POST'])
+def add_location():
+    username = session.get('username')
+    if not username:
+        return jsonify({'error': 'User not logged in'}), 401
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+
+    data = request.form
+    name = data.get('name')
+    state = data.get('state')
+
+    if not all([name, state]):
+        return jsonify({'error': 'All fields are required'}), 400
+
+    upload_result = upload_image(username, request.files.get("file"))
+    if not upload_result[0]:  
+        return jsonify({'error': 'Failed to upload image'}), 500
+
+    file_url = upload_result[1]
+    location = Locations(name=name, state=state, picture_url=file_url)
+    db.session.add(location)
+    db.session.commit()
+    return jsonify({'message': 'Location added successfully', 'url': file_url}), 201
+
+@app.route('/get_locations', methods=['GET'])
+def get_locations():
+    locations = Locations.query.all()
+    locations_list = [{
+        'id': loc.id,
+        'name': loc.name,
+        'state': loc.state,
+        'picture_url': loc.picture_url
+    } for loc in locations]
+    return jsonify(locations_list), 200
+
+@app.route('/add_post', methods=['POST'])
+def add_post():
+    username = session.get('username')
+    if not username:
+        return jsonify({'error': 'User not logged in'}), 401
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+
+    data = request.form
+    location_id = data.get('location_id')
+    content = data.get('content')
+
+    if not all([location_id, content]):
+        return jsonify({'error': 'All fields are required'}), 400
+
+    upload_result = upload_image(username, request.files.get("file"))
+    if not upload_result[0]:  
+        return jsonify({'error': 'Failed to upload image'}), 500
+
+    file_url = upload_result[1]
+    post = Posts(location_id=location_id, username=username, content=content, picture_url=file_url)
+    db.session.add(post)
+    db.session.commit()
+    return jsonify({'message': 'Post added successfully', 'url': file_url}), 201
+
+@app.route('/get_posts/<location_id>', methods=['GET'])
+def get_posts(location_id):
+    posts = Posts.query.filter_by(location_id=location_id).all()
+    posts_list = [{
+        'id': post.id,
+        'username': post.username,
+        'content': post.content,
+        'picture_url': post.picture_url,
+        'timestamp': post.timestamp
+    } for post in posts]
+    return jsonify(posts_list), 200
 
 
 
